@@ -1,4 +1,4 @@
-# routeros-live-ip-registry
+# RouterOs Live IP Registry
 
 Cloudflare Worker + Durable Objects that acts as a tiny registry for **live public IPs** pushed by MikroTik routers, and pulled by a receiver router to allow those IPs in firewall rules.
 
