@@ -1,19 +1,15 @@
 {
-"name": "routeros-live-ip-registry",
-"main": "src/worker.js",
-"compatibility_date": "2025-05-01",
+  "name": "routeros-live-ip-registry",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-05-01",
 
+  "durable_objects": {
+    "bindings": [
+      { "name": "IPSTATE", "class_name": "IpObject" }
+    ]
+  },
 
-// Durable Object binding
-"durable_objects": {
-"bindings": [
-{ "name": "IPSTATE", "class_name": "IpObject" }
-]
-},
-
-
-// Free-plan friendly migration (SQLite-backed DO)
-"migrations": [
-{ "tag": "v1", "new_sqlite_classes": ["IpObject"] }
-]
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["IpObject"] }
+  ]
 }
