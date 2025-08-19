@@ -143,32 +143,61 @@ curl -sS https://routeros-live-ip-registry.<you>.workers.dev/device/sender1_exam
 
 ```rsc
 # /system script add name=pull-senders-ip ...
-/system script add name=pull-senders-ip policy=read,write,test source={
-    :local WORKER_BASE_URL "https://routeros-live-ip-registry.<you>.workers.dev";
-    :local devices {"sender1_example";"sender2_example"};   # add more names later (must match sanitized router names)
-    :local tmp "";
+:local BASE "https://YOUR_SUBDOMAIN.workers.dev"
+:local DEVICES {"ِYOUR_ROUTER_NAME_1";""ِYOUR_ROUTER_NAME_2"}
 
-    :foreach d in=$devices do={
-        :local url ($WORKER_BASE_URL . "/device/" . $d);
-        :set tmp ("dev_" . $d . ".tmp");
+:foreach d in=$DEVICES do={
+    :local url ($BASE . "/device/" . $d)
+    :local tmp ("dev_" . $d . ".tmp")
+    :local ip ""
 
-        /tool fetch url=$url dst-path=$tmp keep-result=yes             http-header-field="Cache-Control: no-cache"             check-certificate=yes http-max-redirect-count=0;
+    # Fetch and process IP
+    :do {
+        /tool fetch url=$url dst-path=$tmp
+        :if ([:len [/file find name=$tmp]] > 0) do={
+            :local content [/file get $tmp contents]
+            /file remove $tmp
+            :if ([:len $content] > 0) do={
+                :local clean [:pick $content 0 [:find $content "\n"]]
+                :set ip [:tostr [:toip $clean]]
+            }
+        }
+    } on-error={
+        :log warning ("recv-ip: fetch failed for " . $d)
+    }
 
-        :local data [/file get $tmp contents]; /file remove $tmp;
-        :local n [:find $data "\n"]; :if ($n != -1) do={ :set data [:pick $data 0 $n]; };
-        :local c [:find $data "\r"]; :if ($c != -1) do={ :set data [:pick $data 0 $c]; };
-
-        :if (!($data ~ "^[0-9]{1,3}(\.[0-9]{1,3}){3}$")) do={
-            :log warning ("pull-senders-ip: invalid/empty IP for " . $d);
+    # Process if we got a valid IP
+    :if ([:len $ip] > 0) do={
+        :local deviceTag ("device:" . $d)
+        :local currentEntry [/ip firewall address-list find where list="senders-allow" and comment=$deviceTag]
+        
+        :if ([:len $currentEntry] > 0) do={
+            # Entry exists - check if IP changed
+            :local currentIP [/ip firewall address-list get $currentEntry address]
+            :if ($currentIP != $ip) do={
+                # IP changed - update entry
+                :do {
+                    /ip firewall address-list set $currentEntry address=$ip timeout=2m
+                    :log info ("recv-ip: updated " . $d . " from " . $currentIP . " to " . $ip)
+                } on-error={
+                    :log warning ("recv-ip: failed to update " . $d . " (" . $ip . ")")
+                }
+            } else={
+                # Same IP - just reset timeout
+                /ip firewall address-list set $currentEntry timeout=2m
+                :log debug ("recv-ip: same IP for " . $d . " (" . $ip . "), reset timeout")
+            }
         } else={
-            :local ip $data;
-            :local tag ("device:" . $d);
-
-            :if ([:len [/ip firewall address-list find list="senders-allow" address=$ip comment=$tag]] = 0) do={
-                /ip firewall address-list add list="senders-allow" address=$ip timeout=2m comment=$tag;
-            };
-            /ip firewall address-list remove [find list="senders-allow" comment=$tag !address=$ip];
-            :log info ("pull-senders-ip: " . $d . " -> " . $ip);
+            # No entry exists - add new one
+            :do {
+                /ip firewall address-list add list="senders-allow" \
+                    address=$ip \
+                    timeout=2m \
+                    comment=$deviceTag
+                :log info ("recv-ip: added new " . $d . " (" . $ip . ")")
+            } on-error={
+                :log warning ("recv-ip: failed to add " . $d . " (" . $ip . ")")
+            }
         }
     }
 }
