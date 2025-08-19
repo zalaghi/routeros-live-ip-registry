@@ -3,8 +3,8 @@
 # Created: 2025-08-19 21:03:50
 # Last Modified: 2025-08-19 21:03:50
 
-:local URL "https://routeros-live-ip-registry.amir-2ce.workers.dev/device/unit51"
-:local TOKEN "X3IIYoBmIGciS4odwSD0CWz3XR7O6PMU"
+:local URL "https://YOUR_SUBDOMAIN.workers.dev/device/YOUR_ROUTER_NAME"
+:local TOKEN "YOUR_LONG_RANDOM_TOKEN"
 :local ip ""
 
 # Get timestamp for logging
