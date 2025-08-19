@@ -1,16 +1,51 @@
-// One Durable Object class per device instance: stores a single IPv4 string
+// src/worker.js
+// Cloudflare Worker + Durable Objects registry for RouterOS senders.
+// Endpoints:
+//   POST /device/<name>   (body = IP in plain text OR form-encoded `ip=<value>`)
+//   GET  /device/<name>   (returns latest IP, text/plain; no-store)
+
+function isIPv4(s) {
+  const parts = s.split(".");
+  if (parts.length !== 4) return false;
+  for (const p of parts) {
+    if (!/^\d+$/.test(p)) return false;
+    const n = Number(p);
+    if (n < 0 || n > 255) return false;
+  }
+  return true;
+}
+
 export class IpObject {
-  constructor(state, env) { this.state = state; }
+  constructor(state, env) {
+    this.state = state;
+    this.env = env;
+  }
 
   async fetch(req) {
     const url = new URL(req.url);
     if (url.pathname !== "/ip") return new Response("not found", { status: 404 });
 
     if (req.method === "POST") {
-      const ip = (await req.text()).trim();
-      if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) return new Response("bad ip", { status: 400 });
+      const raw = (await req.text()) || "";
+      // Accept both text/plain and application/x-www-form-urlencoded
+      let ip = "";
+      try {
+        const params = new URLSearchParams(raw);
+        ip = (params.get("ip") || "").trim();
+      } catch (_) { /* ignore */ }
+      if (!ip) ip = raw.trim();
+
+      // Keep only digits and dots, then validate IPv4
+      ip = ip.replace(/[^\d.]/g, "");
+      if (!isIPv4(ip)) return new Response("bad ip", { status: 400 });
+
       await this.state.storage.put("ip", ip);
-      return new Response("ok");
+      return new Response("ok", {
+        headers: {
+          "Cache-Control": "no-store, no-cache, must-revalidate",
+          "Pragma": "no-cache",
+        },
+      });
     }
 
     if (req.method === "GET") {
@@ -18,10 +53,10 @@ export class IpObject {
       if (!ip) return new Response("not set", { status: 404 });
       return new Response(ip + "\n", {
         headers: {
-          "Content-Type": "text/plain",
+          "Content-Type": "text/plain; charset=utf-8",
           "Cache-Control": "no-store, no-cache, must-revalidate",
-          "Pragma": "no-cache"
-        }
+          "Pragma": "no-cache",
+        },
       });
     }
 
@@ -33,33 +68,40 @@ export default {
   async fetch(req, env) {
     const url = new URL(req.url);
 
-    // Routes: /device/<name>
+    // Route: /device/<name>
     const m = url.pathname.match(/^\/device\/([A-Za-z0-9_-]+)$/);
     if (!m) return new Response("not found", { status: 404 });
     const name = m[1];
 
-    // Auth: POSTs require a token. Prefer per-device secret POST_TOKEN_<NAME>, else POST_TOKEN.
+    // Auth for POST: use per-device POST_TOKEN_<NAME>, else global POST_TOKEN
     if (req.method === "POST") {
-      const auth = req.headers.get("authorization") || "";
-      const desired = env[`POST_TOKEN_${name.toUpperCase()}`] || env.POST_TOKEN;
-      if (!desired || auth !== `Bearer ${desired}`) return new Response("unauthorized", { status: 401 });
+      const provided = req.headers.get("authorization") || "";
+      const expected =
+        env[`POST_TOKEN_${name.toUpperCase()}`] || env.POST_TOKEN || "";
+      if (provided !== `Bearer ${expected}`) {
+        return new Response("unauthorized", { status: 401 });
+      }
     } else if (req.method !== "GET") {
       return new Response("method not allowed", { status: 405 });
     }
 
-    // Single DO instance per device name (consistent id)
+    // Single Durable Object instance per device name
     const id = env.IPSTATE.idFromName(name);
     const stub = env.IPSTATE.get(id);
 
-    // Proxy to DO /ip endpoint
-    const init = { method: req.method };
-    if (req.method === "POST") init.body = await req.text();
-    const doResp = await stub.fetch("https://do/ip", init);
+    // Forward to DO "/ip", preserving body and content-type
+    let body;
+    if (req.method === "POST") body = await req.text();
+    const init = {
+      method: req.method,
+      body,
+      headers: { "content-type": req.headers.get("content-type") || "text/plain" },
+    };
 
-    // Force no caching anywhere
-    const resp = new Response(doResp.body, doResp);
+    const r = await stub.fetch("https://do/ip", init);
+    const resp = new Response(r.body, r);
     resp.headers.set("Cache-Control", "no-store, no-cache, must-revalidate");
     resp.headers.set("Pragma", "no-cache");
     return resp;
-  }
+  },
 };
