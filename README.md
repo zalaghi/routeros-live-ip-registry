@@ -70,8 +70,8 @@ curl -sS https://routeros-live-ip-registry.<you>.workers.dev/device/sender1_exam
 ```rsc
 #Script for RouterOS
 
-:local URL "https://YOUR_WORKER_NAME.YOUR_WORKER_SUB-2ce.workers.dev/device/WRITE_YOUR_DEVICE_NAME"
-:local TOKEN "YOUR_TOKEN_DURING_DEPLOY"
+:local URL "https://YOUR_SUBDOMAIN.workers.dev/device/YOUR_ROUTER_NAME"
+:local TOKEN "YOUR_LONG_RANDOM_TOKEN"
 :local ip ""
 
 # Get timestamp for logging
