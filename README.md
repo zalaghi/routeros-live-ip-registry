@@ -45,18 +45,18 @@ npx wrangler secret put POST_TOKEN
 
 - Optional per-device tokens (override the global one):
 ```bash
-npx wrangler secret put POST_TOKEN_B810
-npx wrangler secret put POST_TOKEN_UNIT16
+npx wrangler secret put POST_TOKEN_SENDER1
+npx wrangler secret put POST_TOKEN_SENDER2
 # Add more as devices grow, e.g. POST_TOKEN_<UPPERCASE_NAME>
 ```
 
 ### 4) Test from your PC (optional)
 ```bash
-# pretend to be router "b810"
-curl -sS -X POST   -H "Authorization: Bearer <YOUR_TOKEN_OR_POST_TOKEN_B810>"   -H "Content-Type: text/plain"   --data "198.51.100.21"   https://routeros-live-ip-registry.<you>.workers.dev/device/b810
+# pretend to be router "sender1_example"
+curl -sS -X POST   -H "Authorization: Bearer <YOUR_TOKEN_OR_POST_TOKEN_SENDER1>"   -H "Content-Type: text/plain"   --data "198.51.100.21"   https://routeros-live-ip-registry.<you>.workers.dev/device/sender1_example
 
 # read it back
-curl -sS https://routeros-live-ip-registry.<you>.workers.dev/device/b810
+curl -sS https://routeros-live-ip-registry.<you>.workers.dev/device/sender1_example
 ```
 
 ---
@@ -114,14 +114,14 @@ curl -sS https://routeros-live-ip-registry.<you>.workers.dev/device/b810
 
 > If you want **per-device tokens**, create `POST_TOKEN_<UPPERCASE_NAME>` on the Worker and use that as `TOKEN` for the matching router.
 
-### B) Receiver router (unit51)
+### B) Receiver router
 - This script fetches all device IPs periodically and keeps a **single** address-list `senders-allow` up to date. Add new devices by adding their **sanitized** names to `devices`.
 
 ```rsc
 # /system script add name=pull-senders-ip ...
 /system script add name=pull-senders-ip policy=read,write,test source={
     :local WORKER_BASE_URL "https://routeros-live-ip-registry.<you>.workers.dev";
-    :local devices {"b810";"unit16"};   # add more names later (must match sanitized router names)
+    :local devices {"sender1_example";"sender2_example"};   # add more names later (must match sanitized router names)
     :local tmp "";
 
     :foreach d in=$devices do={
