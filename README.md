@@ -65,47 +65,71 @@ curl -sS https://routeros-live-ip-registry.<you>.workers.dev/device/sender1_exam
 
 ### A) Sender routers (each router you want to allow later)
 - Paste this script **unchanged** on each router.
-- It automatically discovers the router name (from `/system identity`), sanitizes it, and posts to `/device/<name>`.
 - You only need to set **`WORKER_BASE_URL`** and the **Token**.
 
 ```rsc
-# /system script add name=post-live-ip ...
-/system script add name=post-live-ip policy=read,write,test source={
-    # === CONFIG ===
-    :local WORKER_BASE_URL "https://routeros-live-ip-registry.<you>.workers.dev";
-    :local TOKEN "YOUR_LONG_RANDOM_TOKEN";  # or a per-device token on the worker
+#Script for RouterOS
 
-    # === DISCOVER PUBLIC IPv4 ===
-    :local urls {"https://api.ipify.org";"https://ipv4.icanhazip.com";"https://ifconfig.me/ip"};
-    :local ip "";
-    :foreach u in=$urls do={
-        :do {
-            :local r [/tool fetch url=$u as-value output=user];
-            :local d ($r->"data");
-            :set d [:pick $d 0 [:find ($d . "\n") "\n"]];
-            :set d [:pick $d 0 [:find ($d . "\r") "\r"]];
-            :if ($d ~ "^[0-9]{1,3}(\.[0-9]{1,3}){3}$") do={ :set ip $d; :break }
-        } on-error={}
+:local URL "https://YOUR_WORKER_NAME.YOUR_WORKER_SUB-2ce.workers.dev/device/WRITE_YOUR_DEVICE_NAME"
+:local TOKEN "YOUR_TOKEN_DURING_DEPLOY"
+:local ip ""
+
+# Get timestamp for logging
+:local timestamp ([/system clock get date] . " " . [/system clock get time])
+
+# Try to get public IP with simple fetch command
+:do {
+    :local result [/tool fetch url="http://ifconfig.me/ip" output=user as-value]
+    :set ip ($result->"data")
+} on-error={
+    :log debug ("[" . $timestamp . "] Failed to fetch IP from ifconfig.me")
+}
+
+# If first attempt failed, try backup service
+:if ([:len $ip] = 0) do={
+    :do {
+        :local result [/tool fetch url="http://ipv4.icanhazip.com" output=user as-value]
+        :set ip ($result->"data")
+    } on-error={
+        :log debug ("[" . $timestamp . "] Failed to fetch IP from icanhazip.com")
     }
-    :if ($ip = "") do={ :log warning "post-live-ip: no public IP"; :return };
+}
 
-    # === GET ROUTER NAME & SANITIZE TO [a-z0-9_-] ===
-    :local rawName [/system identity get name];
-    :local lower [:tolower $rawName];
-    :local allowed "abcdefghijklmnopqrstuvwxyz0123456789-_";
-    :local name "";
-    :for i from=0 to=([:len $lower] - 1) do={
-        :local ch [:pick $lower $i ($i+1)];
-        :if ($ch = " ") do={ :set ch "-" };
-        :if ([:find $allowed $ch] != nil) do={ :set name ($name . $ch) };
+# Clean the IP string - remove any whitespace or newlines
+:if ([:len $ip] > 0) do={
+    # Remove trailing whitespace and newlines
+    :local newip ""
+    :local chars [:len $ip]
+    :for i from=0 to=($chars - 1) do={
+        :local char [:pick $ip $i]
+        :if ($char != "\r" && $char != "\n" && $char != " ") do={
+            :set newip ($newip . $char)
+        }
     }
-    :if ($name = "") do={ :set name "router" };
+    :set ip $newip
+}
 
-    # === POST TO WORKER ===
-    :local url ($WORKER_BASE_URL . "/device/" . $name);
-    /tool fetch url=$url http-method=post http-data=$ip         http-header-field=("Authorization: Bearer " . $TOKEN)         http-header-field="Content-Type: text/plain"         output=none check-certificate=yes http-max-redirect-count=0;
+# Verify we have a valid IP
+:if ([:len $ip] > 0) do={
+    :do {
+        :set ip [:tostr [:toip $ip]]
+    } on-error={
+        :set ip ""
+    }
+}
 
-    :log info ("post-live-ip: [" . $name . "] -> " . $ip);
+# Final check before sending
+:if ([:len $ip] = 0) do={
+    :log warning ("[" . $timestamp . "] post-live-ip: Failed to get valid public IP address")
+    :return
+}
+
+# Send the update
+:do {
+    /tool fetch http-method=post url=$URL http-data=$ip http-header-field=("Authorization: Bearer " . $TOKEN) output=none
+    :log info ("[" . $timestamp . "] Successfully updated public IP: " . $ip)
+} on-error={
+    :log warning ("[" . $timestamp . "] Failed to send update for public IP: " . $ip)
 }
 
 # schedule every 30 seconds
