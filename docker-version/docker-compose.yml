@@ -1,0 +1,25 @@
+services:
+  ip-registry:
+    build: .
+    container_name: routeros-live-ip-registry
+    ports:
+      - "8080:8080"
+    environment:
+      # Set a long random token. Also supports per-device env vars: POST_TOKEN_<NAME>
+      # Example: POST_TOKEN_SENDER1=...
+      - POST_TOKEN=CHANGE_ME
+
+      # If the container is behind a reverse proxy that sets X-Forwarded-For, enable this:
+      # - TRUST_PROXY=1
+
+      # Keep 1 unless you REALLY want unauthenticated updates:
+      - REQUIRE_TOKEN=1
+
+      # Optional: change storage location inside the container
+      - DEVICES_DIR=/data/devices
+    volumes:
+      - ip-registry-data:/data
+    restart: unless-stopped
+
+volumes:
+  ip-registry-data:

@@ -1,0 +1,14 @@
+{
+  "name": "routeros-live-ip-registry-docker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny IP registry for MikroTik routers (Docker version; file-backed; no cache).",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
